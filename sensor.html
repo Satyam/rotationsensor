@@ -1,0 +1,258 @@
+<!doctype html>
+<html>
+
+	<head>
+		<title>position sensor readings</title>
+		<style>
+			th, td {
+				border:thin solid silver;
+			}
+			td {
+				text-align: right;
+			}
+
+		</style>
+	</head>
+
+	<body>
+		<div id="output"></div>
+		<script>
+
+			// These are the angles that each of the four pads span.  
+			// In this configuration we have four pads spanning 60 degrees each
+			// equally spaced.
+
+			// The program assumes 4 pads but if you want 3, simply set
+			// the last entry to {from:0, to:0}
+			// If you do any changes, the colors on the table will
+			// be completely meaningless.
+			var pulsingPads = [
+				{from:0, to:60},
+				{from:90, to:150},
+				{from:180, to:240},
+				{from:270, to:330}
+			];
+
+			// This are the angles of each of the pads on the rotating disk
+			// They are two pads of 90 degrees each, offset 120 degrees from 
+			// one another.
+			var sensingPads = [
+				{from: 0, to: 90},
+				{from: 120, to: 210}
+			];
+
+
+			var o = [];
+
+			// Here is the calculation of the signal received.
+			// The signal depends on the capacitance.
+			// The capacitance depends on the distance in between the plates
+			// and the area overlapped.
+			// The distance in between the plates is constant and the 
+			// area depends on the angle.  
+			for (var angle = 0; angle < 360; angle++) {
+				o[angle] = [];
+
+				for (var ppad = 0; ppad < 4; ppad++) {
+					var sum = 0,
+						p = pulsingPads[ppad];	
+
+					for (var spad = 0; spad < 2; spad++) {
+
+						var s = sensingPads[spad];
+						for (var extra = 0; extra < 2; extra++) {
+							var from = Math.max(p.from + (extra * 360), s.from  + angle),
+								to = Math.min(p.to  + (extra * 360), s.to + angle),
+								overlap = to - from;
+
+							if (overlap > 0) sum +=  overlap;
+						}
+					}
+					o[angle][ppad] = sum;
+				}
+			}
+			
+			// This part deals with presenting the table.
+			var h = '<table><tr><th rowspan="2">Angle</th><th colspan="4">sensor</th><th rowspan="2">sum</th>' + 
+				'<th rowspan="2">calc</th><th rowspan="2">Count</th><th rowspan="2">Calc</th><th rowspan="2">Err</th></tr>' + 
+			'<tr><th>1</th><th>2</th><th>3</th><th>4</th></tr>',
+				cell = function (value) {
+					var highlight = {0:'red',30:'yellow',60:'green'}[value] || 'white';
+					h += '<td style="background-color:' + highlight + ';">' + value +'</td>';
+				};
+
+			// This is part of the algorithm to solve it.
+			var patterns = {}, repeats = [], 
+				decoders = {
+					_6330: 0,
+					_n3n0: [[2, -1],[0, 2]],
+					_3360: 1,
+					_nn60: [[1, 0],[0, 2]],
+					_0660: 2,
+					_06nn: [[3, 2], [2, 4]],
+					_0633: 3,
+					_0n3n: [[3, 2], [1, 5]],
+					_0336: 4,
+					_0nn6: [[2, 3], [1, 5]],
+					_0066: 5,
+					_n06n: [[0, 5], [3, 7]],
+					_3063: 6,
+					_n0n3: [[0, 5], [2, 8]],
+					_6033: 7,
+					_60nn: [[3, 6], [2, 8]],
+					_6006: 8,
+					_nn06: [[1, 8],[0,10]],
+					_3306: 9,
+					_3n0n: [[1, 8],[3, 11]],
+					_3603: 10,
+					_n60n: [[0,9],[3, 11]],
+					_6600: 11,
+					_6nn0: [[2,11],[1,13]]
+
+				};
+			var decode = function (v, dec) { 
+				if (typeof dec == 'number') {
+					return dec * 30;
+				}
+				var a =  (v[dec[0][0]] + (dec[0][1] * 30));
+				if (Math.abs((30 * dec[1][1]) -v [dec[1][0]] - a) < 3) {
+					return a;
+				} 
+				return null;
+			};
+			var round = function (v) {
+				return Math.round(v * 100) / 100;
+			};
+			
+			var errAccum = 0, errCount = 0;
+			var calculate = function (row, angle) {
+				var vals = [], count = 0, 
+					retries = 100, deviation = 0.1
+				for (var i = 0; count < 20 && i < retries;i++) {
+
+
+					// randomize the row values
+					// as if they actually came from the sensors
+					// give it a +/-5% error
+					var r = row.map(function (value) {
+						return value * ((1 - deviation) + Math.random() * deviation * 2);
+					});
+
+					// get the minimum value
+					var min = Math.min.apply(this, r);
+
+					// calculate the total after substracting the minumum from all
+					var total = 0;
+					r.forEach(function (value) {
+						total += value - min;
+					});
+					r = r.map(function (value,i) {
+
+						return Math.round((value - min)  * 12000 / total) / 100;
+					});
+					var f;
+					for(var margin = 0; f === undefined && margin < 9; margin += 1) {
+						var code = ['n','n','n','n'];
+						r.forEach(function (value, i) {
+							if (Math.abs(value - 60) < margin) {
+								code[i] = '6';
+							}
+							if (Math.abs(value - 30) < margin) {
+								code[i] = '3';
+							}
+							if (Math.abs(value) < margin) {
+								code[i] = '0';
+							}
+						});
+						code = '_' + code.join('');
+						f = decoders[code];
+					}
+
+					if (f !== undefined) {
+						var v = decode(r,f);
+						if (v !== null) {
+							if (angle < 90 && v > 270) v -= 360;
+							if (angle > 270 && v < 90) v += 360;
+							vals.push(round(v));
+							count++;
+							//console.log('found', angle, row.join(','), r.join(','),  margin , code, decode(r,f));
+						}
+						//console.log('null', angle, row.join(','), r.join(','), margin , code);
+					} else {
+						//console.log('no pattern', angle, row.join(','), r.join(','), margin , code);
+					}
+
+				}
+				var accum = 0;
+				vals.forEach(function (v) {
+					accum += v;
+				});
+				var val = accum /= count;
+				accum = 0;
+				count = 0;
+				vals.forEach(function (v, i) {
+					if (Math.abs(v - val) < 50) {
+						accum +=  v;
+						count ++;
+					} else {
+						console.log('desvio', angle, vals, i);
+					}
+				});
+				if (count) {
+					var err = round((accum / count - angle)); 
+					if (err < -180) err += 360;
+					if (Math.abs(err) > 2)  {
+						console.log('dif', angle, vals);
+					}
+					if (isNaN(err)) debugger;
+					errAccum += Math.abs(err);
+					errCount++;
+				}else {
+					console.log('no good', angle, vals.join(','));
+				}
+				return '<td' + (count < 5?' style="color:magenta"':'') + '>' + count + '</td><td>' + round(accum / count) + '</td><td' + (Math.abs(err) > 2?' style="color:magenta"':'') + '>' + err + '</td>';
+							
+						
+				
+			};
+			o.forEach(function (row, angle) {
+				
+				// Printing the results
+				var pattern = '', 
+					s = '_',
+					total = 0;
+				
+				//if (angle % 15) return;
+				h += '<tr><th>' + angle + '</th>';
+				row.forEach(function (value) {
+					total += value;
+					cell(value);
+					pattern += '-' + value;
+					s +=value % 30?'n':Math.floor(value / 10);
+				});
+				cell(total);
+				var v1 = decode(row, decoders[s] || decoders['_6330']);
+				h += '<td style="color:' + (v1 == angle?'silver':'red') + '">' + v1 + '</td>';
+				
+				h += calculate(row, angle);
+				h += '</tr>';
+				
+				
+				// Checking out if any pattern repeats itself
+				if (patterns[pattern]) {
+					repeats.push('[' + patterns[pattern] + ':' + angle + ']');
+				} else {
+					patterns[pattern] = angle;
+				}
+			});
+			h += '</table>';
+			h+= '<p>Err avg: ' +  (errAccum / errCount) + '</p>';
+			// Printing repeated pattenrs, if any
+			repeats.forEach(function (value) {
+				h += value + '<br/>';
+			});
+			document.getElementById('output').innerHTML = h;
+		</script>
+	</body>
+
+</html>
