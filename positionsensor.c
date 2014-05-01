@@ -23,7 +23,7 @@
 
 #define output(directions,pin) (directions |= pin) // set port direction for output
 #define set(port,pin) (port |= pin) // set port pin
-#define clear(port,pin) (port &= (~pin)) // clear port pin
+#define clear(port,pin) (port &= (~(pin))) // clear port pin
 #define pin_test(pins,pin) (pins & pin) // test for port pin
 #define bit_test(byte,bit) (byte & (1 << bit)) // test for bit set
 #define bit_delay_time 8.5 // bit delay for 115200 with overhead
@@ -112,6 +112,7 @@ void put_char(volatile unsigned char *port, unsigned char pin, char txchar) {
 #define putChar(chr) put_char(&serial_port, serial_pin_out, chr)
 
 // converts an unsinged integer to hex (preceeded by 0x) and sends it via serial
+/*
 void put_hex(uint16_t value) {
 	int8_t shift,
 		chr;
@@ -123,11 +124,11 @@ void put_hex(uint16_t value) {
 		putChar(chr);
 	}
 }
+*/
 
-/* TODO
-void put_int(uint16_t value) {
+void put_uint16(uint16_t value) {
 	char out[5] = {'0','0','0','0','0'};
-	uint8_t digit;
+	int8_t digit;
 	for (digit = 4; digit >= 0; digit--) {
 		out[digit] = (value % 10) + '0';
 		value /= 10;
@@ -136,7 +137,6 @@ void put_int(uint16_t value) {
 		putChar(out[digit]);
 	}
 }
-*/	
 
 
 // Just a simple mechanism to refer to the pins that correspond to the pulsing pads		
@@ -253,6 +253,7 @@ uint16_t values[4];
 // number of successful reads and the margin on each pattern recognition
 // added up for each batch of batch_size iterations
 uint16_t diffs, finds, margins;
+
 // In order to keep the most information we gather, value will
 // hold the angle in tenths of a degree. 
 // Also, since we have two separate readings, instead of averaging
@@ -268,7 +269,7 @@ uint16_t abs (int16_t v) {
 // Given a pattern, searches for a match in the decoders table
 // and accumulates the calculated angle into value.
 // Returns true if succcessful, false if the pattern could not be found.
-int8_t decodeSimple (uint8_t pattern, int16_t total, int16_t quarter) {
+int8_t decodeSimple (uint8_t pattern, uint16_t total, uint16_t quarter) {
 	decodeStruct *p;
 	
 	for (p = (decodeStruct*) decoders; p->patternS; p++) {
@@ -284,6 +285,7 @@ int8_t decodeSimple (uint8_t pattern, int16_t total, int16_t quarter) {
 	}
 	return 0;
 }
+
 // Given a pattern, it searches for a match in the decoders table.
 // Complex patterns always have a Z, one of H or Q and two N.
 // The angle can be calculated independently from any of those Ns
@@ -292,7 +294,7 @@ int8_t decodeSimple (uint8_t pattern, int16_t total, int16_t quarter) {
 // We also accumulate the difference in between those two values
 // to have a measure of the confidence of the reading.
 // If the pattern could not be found, it returns false.
-int8_t decodeComplex(uint8_t pattern, int16_t total, int16_t quarter) {
+int8_t decodeComplex(uint8_t pattern, uint16_t total, uint16_t quarter) {
 	decodeStruct *p;
 	int32_t value1, value2;
 	
@@ -300,8 +302,10 @@ int8_t decodeComplex(uint8_t pattern, int16_t total, int16_t quarter) {
 		if (p->patternC == pattern) {
 			// times 120 to turn it into degreees, 
 			// times 10 to make it tenths of degrees
-			value1 = (values[p->pad1] + p->mult1 * quarter)  * 120 * 10 / total;
-			value2 = (p->mult2 * quarter - values[p->pad2])  * 120 * 10 / total;
+			
+			// TODO check whether the type-casting can be dropped, I think it is not required.
+			value1 = (int32_t)(values[p->pad1] + p->mult1 * quarter)  * 120 * 10 / total;
+			value2 = (int32_t)(p->mult2 * quarter - values[p->pad2])  * 120 * 10 / total;
 			
 			/*
 			Alternative: 
@@ -324,7 +328,7 @@ int8_t decodeComplex(uint8_t pattern, int16_t total, int16_t quarter) {
 // Converts a reading of the four pads into an angle and accumulates it
 // for averaging over a batch of readings.
 void convert () {
-	int16_t min,
+	uint16_t min,
 		total,
 		half,
 		quarter,
@@ -336,7 +340,7 @@ void convert () {
 		pattern;
 	
 	// Find the minumum value
-	for (min = 9999, pad = 0;pad < 4; pad++) {
+	for (min = UINT16_MAX, pad = 0; pad < 4; pad++) {
 		if (values[pad] < min) {
 			min = values[pad];
 		}
@@ -360,7 +364,7 @@ void convert () {
 	// due to noise.  We try a match with 0 margin but
 	// if it fails, we keep increasing the margin
 	// until a match is found or the margin becomes unacceptable
-	for ( margin = found = 0; !found && margin < (total / 4); margin++) {
+	for ( margin = found = 0; !found && margin < (total >> 2); margin++) {
 		
 		// here we try to recognize the pattern
 		for (numN = pattern = pad = 0; pad < 4; pad++) {
@@ -463,7 +467,7 @@ int main(void) {
    output(serial_direction, serial_pin_out);
    set(serial_port, serial_pin_out);
 
-   output(pulsing_pad_direction, pulsing_pin1);
+   /*output(pulsing_pad_direction, pulsing_pin1);
    clear(pulsing_pad_port, pulsing_pin1);
    output(pulsing_pad_direction, pulsing_pin2);
    clear(pulsing_pad_port, pulsing_pin2);
@@ -471,14 +475,14 @@ int main(void) {
    clear(pulsing_pad_port, pulsing_pin3);
    output(pulsing_pad_direction, pulsing_pin4);
    clear(pulsing_pad_port, pulsing_pin4);
-	
-	/* TODO
-	I think this would also work:
-	output(pulsing_pad_direction, (pulsing_pin1 | pulsing_pin2 | pulsing_pin3 | pulsing_pin4));
-	clear (pulsing_pad_port, (pulsing_pin1 | pulsing_pin2 | pulsing_pin3 | pulsing_pin4));
 	*/
 	
-
+	output(pulsing_pad_direction, pulsing_pin1 | pulsing_pin2 | pulsing_pin3 | pulsing_pin4);
+	clear(pulsing_pad_port, pulsing_pin1 | pulsing_pin2 | pulsing_pin3 | pulsing_pin4);
+	
+	// Give it a first change to settle after setting the pins as output.
+	_delay_ms(10);
+	
    // Make sensing ring pin input
    clear(DDRA, PA7);
    //
@@ -529,13 +533,13 @@ int main(void) {
 			putChar(':');
 			// Divide by 2 because we added both readings in the complex case
 			// and added twice the single value for the simple case.
-			put_hex(value / finds / 2);
+			put_uint16(value / finds / 2);
 			putChar(',');
-			put_hex(finds);
+			put_uint16(finds);
 			putChar(',');
-			put_hex(diffs / finds / 10);
+			put_uint16(diffs / finds / 10);
 			putChar(',');
-			put_hex(margins / finds);
+			put_uint16(margins / finds);
 			putChar('\n');
 
 		} else {

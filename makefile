@@ -3,7 +3,7 @@ SOURCES=$(PROJECT).c
 MMCU=attiny44
 F_CPU = 20000000
 
-CFLAGS=-mmcu=$(MMCU) -Wall -Os -DF_CPU=$(F_CPU) -S
+CFLAGS=-mmcu=$(MMCU) -Wall -Os -DF_CPU=$(F_CPU)
 
 $(PROJECT).hex: $(PROJECT).out
 	avr-objcopy -O ihex $(PROJECT).out $(PROJECT).c.hex;\
