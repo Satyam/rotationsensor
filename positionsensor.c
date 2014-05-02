@@ -45,6 +45,9 @@
 #define pulsing_pin3 (1 << PA1) // Grey wire (bottom left pad)
 #define pulsing_pin4 (1 << PA0) // Black wire (top left pad)
 
+#define nl putChar('\n')
+#define comma putChar(',')
+
 void put_char(volatile unsigned char *port, unsigned char pin, char txchar) {
    //
    // send character in txchar on port pin
@@ -112,7 +115,7 @@ void put_char(volatile unsigned char *port, unsigned char pin, char txchar) {
 #define putChar(chr) put_char(&serial_port, serial_pin_out, chr)
 
 // converts an unsinged integer to hex (preceeded by 0x) and sends it via serial
-/*
+
 void put_hex(uint16_t value) {
 	int8_t shift,
 		chr;
@@ -124,7 +127,7 @@ void put_hex(uint16_t value) {
 		putChar(chr);
 	}
 }
-*/
+
 
 void put_uint16(uint16_t value) {
 	char out[5] = {'0','0','0','0','0'};
@@ -134,6 +137,18 @@ void put_uint16(uint16_t value) {
 		value /= 10;
 	}
 	for (digit = 0;digit < 5; digit++) {
+		putChar(out[digit]);
+	}
+}
+
+void put_uint32(uint32_t value) {
+	char out[10] = {'0','0','0','0','0','0','0','0','0','0'};
+	int8_t digit;
+	for (digit = 9; digit >= 0; digit--) {
+		out[digit] = (value % 10) + '0';
+		value /= 10;
+	}
+	for (digit = 0;digit < 10; digit++) {
 		putChar(out[digit]);
 	}
 }
@@ -274,6 +289,13 @@ int8_t decodeSimple (uint8_t pattern, uint16_t total, uint16_t quarter) {
 	
 	for (p = (decodeStruct*) decoders; p->patternS; p++) {
 		if (p->patternS == pattern) {
+			if (finds < 5) {
+				putChar('S');
+				put_hex(pattern);
+				comma;
+				put_uint16(p->multiplier);
+				nl;
+			}
 			// Times 30 because this patterns occur every 30 degrees.
 			// Times 2 to make it as if I had two readings, like in the complex case
 			// times 10 to turn it into tenths of degrees.
@@ -300,6 +322,23 @@ int8_t decodeComplex(uint8_t pattern, uint16_t total, uint16_t quarter) {
 	
 	for (p = (decodeStruct*) decoders; p->patternS; p++) {
 		if (p->patternC == pattern) {
+			if (finds < 5) {
+				putChar('C');
+				put_hex(pattern);
+				comma;
+				put_uint16(p->pad1);
+				comma;
+				put_uint16(p->mult1);
+				comma;
+				put_uint16(p->pad2);
+				comma;
+				put_uint16(p->mult2);
+				comma;
+				put_uint16(quarter);
+				comma;
+				put_uint16(total);
+				nl;
+			}
 			// times 120 to turn it into degreees, 
 			// times 10 to make it tenths of degrees
 			
@@ -307,6 +346,13 @@ int8_t decodeComplex(uint8_t pattern, uint16_t total, uint16_t quarter) {
 			value1 = (int32_t)(values[p->pad1] + p->mult1 * quarter)  * 120 * 10 / total;
 			value2 = (int32_t)(p->mult2 * quarter - values[p->pad2])  * 120 * 10 / total;
 			
+			if (finds < 5) {
+				putChar('c');
+				put_uint32(value1);
+				comma;
+				put_uint32(value2);
+				nl;
+			}
 			/*
 			Alternative: 
 				Instead of averaging the two values read
@@ -349,15 +395,34 @@ void convert () {
 	// Subtract the minimum found from each value
 	// so we have a baseline.
 	// Also calculate the total for all those values
+	if (finds < 5) {
+		putChar('R');
+		comma;
+		put_uint16(min);
+	}
 	for (total = pad = 0; pad < 4; pad++) {
 		values[pad] -= min;
 		total += values[pad];
+		if (finds < 5) {
+			comma;
+			put_uint16(values[pad]);
+		}
 	}
+	nl;
 
 	// Calculate half and quarter the total readout to
 	// speed up the pattern matching below
 	half = total >> 1;
 	quarter = half >> 1;
+	if (finds < 5) {
+		putChar('r');
+		put_uint16(total);
+		comma;
+		put_uint16(quarter);
+		comma;
+		put_uint16(half);
+		nl;
+	}
 
 	// Since the values come with noise, they will rarely
 	// match any pattern so we accept a margin of error
@@ -378,6 +443,15 @@ void convert () {
 			}
 		}
 		
+		if (finds < 5) {
+			putChar('T');
+			put_hex(pattern);
+			comma;
+			put_uint16(margin);
+			comma;
+			put_uint16(numN);
+			nl;
+		}
 		// Valid patterns can have either 2 or no 'N's.
 		// So I count the number of Ns in numN.
 		switch (numN) {
@@ -404,6 +478,11 @@ void convert () {
 		// If there was a match, we accumulate the margin for this match to report the average
 		// and we increment the count of finds
 		if (found) {
+			if (finds < 5) {
+				putChar('F');
+				put_uint32(value);
+				nl;
+			}
 			margins += margin;
 			finds++;
 		}
@@ -508,11 +587,20 @@ int main(void) {
 	   
 	   	// Repeat the calculations for batch_size times.
 		for (batch = 0; batch < batch_size; batch++) {
+			if (finds < 5) {
+				putChar('V');
+				put_uint16(finds);
+			}
 			
 			// get the readings for the four pads
 		   for (pad = 0; pad < 4; pad++) {
 			   values[pad] = getPadReading(pad);
+			   if (finds < 5) {
+				   comma;
+				   put_uint16(values[pad]);
+			   }
 		   }
+			nl;
 			//convert a single set of readings
 		   convert();
 		}
