@@ -376,12 +376,15 @@ void convert () {
 		total,
 		half,
 		quarter,
-		margin;
+		margin,
+		extra;
 	
 	uint8_t pad,
 		found,
 		numN,
 		pattern;
+	
+	int8_t extraPad;
 	
 	// Find the minumum value
 	for (min = UINT16_MAX, pad = 0; pad < 4; pad++) {
@@ -428,61 +431,65 @@ void convert () {
 	// if it fails, we keep increasing the margin
 	// until a match is found or the margin becomes unacceptable
 	for ( margin = found = 0; !found && margin < (total >> 3); margin++) {
-		
-		// here we try to recognize the pattern
-		for (numN = pattern = pad = 0; pad < 4; pad++) {
-			pattern <<=2;
-			if (abs(values[pad]) < margin) pattern+=Z;
-			else if (abs(values[pad] - quarter) < margin) pattern += Q;
-			else if (abs(values[pad] - half) < margin) 	pattern += H;
-			else {
-				// pattern += N;  // since N is zero, it won't really make a difference
-				numN++;
-			}
-		}
-		
-		if (finds < 5) {
-			putChar('T');
-			put_hex(pattern);
-			comma;
-			put_uint16(margin);
-			comma;
-			put_uint16(numN);
-			nl;
-		}
-		// Valid patterns can have either 2 or no 'N's.
-		// So I count the number of Ns in numN.
-		switch (numN) {
-			case 0: // no Ns, it is a simple pattern
-				found += decodeSimple(pattern, total);
-				break;
-			case 1: // needs patching
-				/*
-				It often happens with values close the positions multiple of 30 degrees
-				that a value is quite close to Z, Q or H, well within the margin accepted.
-				No pattern can have just 1 N, they can have 2 or none at all.
-				Here we turn each of the pad values into an N and see if we then get a match.
-				*/
-				for (pad = 0; pad < 4 && !found; pad++) {
-					found += decodeComplex(pattern & (~(3<< (pad * 2))), total);
+		for (extraPad = -1; extraPad < 4 && !found; extraPad++) {
+
+			// here we try to recognize the pattern
+			for (numN = pattern = pad = 0; pad < 4; pad++) {
+				extra = (pad == extraPad?margin + 1:margin);
+				pattern <<=2;
+				if (abs(values[pad]) < extra) pattern+=Z;
+				else if (abs(values[pad] - quarter) < extra) pattern += Q;
+				else if (abs(values[pad] - half) < extra) 	pattern += H;
+				else {
+					// pattern += N;  // since N is zero, it won't really make a difference
+					numN++;
 				}
-				break;
-			case 2: // two Ns, it is a complex pattern
-				found += decodeComplex(pattern, total);
-				break;
-			case 3: // two many Ns, there is an H or Q missing somewhere, retry
-				break;
-		}
-		// If there was a match, we accumulate the margin for this match to report the average
-		// and we increment the count of finds
-		if (found) {
+			}
+
 			if (finds < 5) {
-				putChar('F');
-				put_uint32(value);
+				putChar('T');
+				put_hex(pattern);
+				comma;
+				put_uint16(margin);
+				comma;
+				put_uint16(numN);
 				nl;
 			}
-			margins += margin;
-			finds++;
+			// Valid patterns can have either 2 or no 'N's.
+			// So I count the number of Ns in numN.
+			switch (numN) {
+				case 0: // no Ns, it is a simple pattern
+					found += decodeSimple(pattern, total);
+					break;
+				case 1: // needs patching
+					/*
+					It often happens with values close the positions multiple of 30 degrees
+					that a value is quite close to Z, Q or H, well within the margin accepted.
+					No pattern can have just 1 N, they can have 2 or none at all.
+					Here we turn each of the pad values into an N and see if we then get a match.
+					*/
+					// TODO Try with and without the following lines
+//					for (pad = 0; pad < 4 && !found; pad++) {
+//						found += decodeComplex(pattern & (~(3<< (pad * 2))), total);
+//					}
+					break;
+				case 2: // two Ns, it is a complex pattern
+					found += decodeComplex(pattern, total);
+					break;
+				case 3: // two many Ns, there is an H or Q missing somewhere, retry
+					break;
+			}
+			// If there was a match, we accumulate the margin for this match to report the average
+			// and we increment the count of finds
+			if (found) {
+				if (finds < 5) {
+					putChar('F');
+					put_uint32(value);
+					nl;
+				}
+				margins += margin;
+				finds++;
+			}
 		}
 	}
 };
