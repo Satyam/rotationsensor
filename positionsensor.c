@@ -284,7 +284,7 @@ uint16_t abs (int16_t v) {
 // Given a pattern, searches for a match in the decoders table
 // and accumulates the calculated angle into value.
 // Returns true if succcessful, false if the pattern could not be found.
-int8_t decodeSimple (uint8_t pattern, uint16_t total, uint16_t quarter) {
+int8_t decodeSimple (uint8_t pattern, uint16_t total) {
 	decodeStruct *p;
 	
 	for (p = (decodeStruct*) decoders; p->patternS; p++) {
@@ -316,7 +316,7 @@ int8_t decodeSimple (uint8_t pattern, uint16_t total, uint16_t quarter) {
 // We also accumulate the difference in between those two values
 // to have a measure of the confidence of the reading.
 // If the pattern could not be found, it returns false.
-int8_t decodeComplex(uint8_t pattern, uint16_t total, uint16_t quarter) {
+int8_t decodeComplex(uint8_t pattern, uint16_t total) {
 	decodeStruct *p;
 	int32_t value1, value2;
 	
@@ -326,6 +326,8 @@ int8_t decodeComplex(uint8_t pattern, uint16_t total, uint16_t quarter) {
 				putChar('C');
 				put_hex(pattern);
 				comma;
+				put_uint16(total);
+				comma;
 				put_uint16(p->pad1);
 				comma;
 				put_uint16(p->mult1);
@@ -333,18 +335,14 @@ int8_t decodeComplex(uint8_t pattern, uint16_t total, uint16_t quarter) {
 				put_uint16(p->pad2);
 				comma;
 				put_uint16(p->mult2);
-				comma;
-				put_uint16(quarter);
-				comma;
-				put_uint16(total);
 				nl;
 			}
 			// times 120 to turn it into degreees, 
 			// times 10 to make it tenths of degrees
 			
 			// TODO check whether the type-casting can be dropped, I think it is not required.
-			value1 = (int32_t)(values[p->pad1] + p->mult1 * quarter)  * 120 * 10 / total;
-			value2 = (int32_t)(p->mult2 * quarter - values[p->pad2])  * 120 * 10 / total;
+			value1 = (int32_t)(4 * values[p->pad1] + p->mult1 * total)  * 30 * 10 / total;
+			value2 = (int32_t)(p->mult2 * total - 4 * values[p->pad2])  * 30 * 10 / total;
 			
 			if (finds < 5) {
 				putChar('c');
@@ -429,7 +427,7 @@ void convert () {
 	// due to noise.  We try a match with 0 margin but
 	// if it fails, we keep increasing the margin
 	// until a match is found or the margin becomes unacceptable
-	for ( margin = found = 0; !found && margin < (total >> 2); margin++) {
+	for ( margin = found = 0; !found && margin < (total >> 3); margin++) {
 		
 		// here we try to recognize the pattern
 		for (numN = pattern = pad = 0; pad < 4; pad++) {
@@ -456,7 +454,7 @@ void convert () {
 		// So I count the number of Ns in numN.
 		switch (numN) {
 			case 0: // no Ns, it is a simple pattern
-				found += decodeSimple(pattern, total, quarter);
+				found += decodeSimple(pattern, total);
 				break;
 			case 1: // needs patching
 				/*
@@ -466,11 +464,11 @@ void convert () {
 				Here we turn each of the pad values into an N and see if we then get a match.
 				*/
 				for (pad = 0; pad < 4 && !found; pad++) {
-					found += decodeComplex(pattern & (~(3<< (pad * 2))), total, quarter);
+					found += decodeComplex(pattern & (~(3<< (pad * 2))), total);
 				}
 				break;
 			case 2: // two Ns, it is a complex pattern
-				found += decodeComplex(pattern, total, quarter);
+				found += decodeComplex(pattern, total);
 				break;
 			case 3: // two many Ns, there is an H or Q missing somewhere, retry
 				break;
